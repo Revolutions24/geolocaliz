@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Super App de Geolocalización</title>
+
+    <!-- Leaflet CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+
+    <!-- Personalización con CSS -->
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+            background-color: #f4f4f4;
+        }
+        header {
+            background-color: #0077b6;
+            color: white;
+            padding: 15px;
+            text-align: center;
+        }
+        #map {
+            height: 300px;
+            margin: 10px;
+        }
+        .container {
+            padding: 20px;
+        }
+        input, button {
+            padding: 10px;
+            margin: 5px;
+            border: 1px solid #0077b6;
+            border-radius: 5px;
+            font-size: 16px;
+        }
+        button {
+            background-color: #0077b6;
+            color: white;
+            cursor: pointer;
+        }
+        button:hover {
+            background-color: #005f8a;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 10px;
+        }
+        table, th, td {
+            border: 1px solid black;
+        }
+        th, td {
+            padding: 10px;
+            text-align: left;
+        }
+        th {
+            background-color: #0077b6;
+            color: white;
+        }
+    </style>
+
+    <!-- Librerías necesarias -->
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.6.0/jszip.min.js"></script>
+
+</head>
+<body>
+    <header>
+        <h1>Super App de Geolocalización</h1>
+    </header>
+
+    <div class="container">
+        <!-- Mapa de Leaflet -->
+        <div id="map"></div>
+
+        <!-- Inputs para coordenadas -->
+        <label for="este">Este (X): </label>
+        <input type="number" id="este" placeholder="Este (X)" readonly><br>
+
+        <label for="norte">Norte (Y): </label>
+        <input type="number" id="norte" placeholder="Norte (Y)" readonly><br>
+
+        <label for="cota">Cota (Z): </label>
+        <input type="number" id="cota" placeholder="Ingrese Cota (Z)"><br>
+
+        <label for="zona">Zona UTM: </label>
+        <input type="text" id="zona" readonly><br>
+
+        <button onclick="registrarCoordenada()">Registrar Coordenada</button>
+        <button onclick="exportarXLSX()">Exportar a XLSX</button>
+        <button onclick="exportarKML()">Exportar a KML</button>
+
+        <!-- Tabla para mostrar las coordenadas -->
+        <table id="tabla-coordenadas">
+            <thead>
+                <tr>
+                    <th>Este (X)</th>
+                    <th>Norte (Y)</th>
+                    <th>Cota (Z)</th>
+                    <th>Zona</th>
+                </tr>
+            </thead>
+            <tbody></tbody>
+        </table>
+    </div>
+
+    <script>
+        // Crear el mapa de Leaflet centrado en coordenadas iniciales
+        let map = L.map('map').setView([-12.0464, -77.0428], 13);
+
+        // Añadir un mapa base de OpenStreetMap
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: '© OpenStreetMap contributors'
+        }).addTo(map);
+
+        let marker;
+
+        // Configuración de IndexedDB para almacenamiento offline
+        let db;
+        let request = indexedDB.open("CoordenadasDB", 1);
+
+        request.onupgradeneeded = function(event) {
+            db = event.target.result;
+            let objectStore = db.createObjectStore("coordenadas", { keyPath: "id", autoIncrement: true });
+        };
+
+        request.onsuccess = function(event) {
+            db = event.target.result;
+        };
+
+        request.onerror = function(event) {
+            console.log("Error en IndexedDB: " + event.target.errorCode);
+        };
+
+        // Función para registrar la coordenada
+        function registrarCoordenada() {
+            let este = document.getElementById('este').value;
+            let norte = document.getElementById('norte').value;
+            let cota = document.getElementById('cota').value;
+            let zona = document.getElementById('zona').value;
+
+            if (este === "" || norte === "") {
+                alert("No hay coordenadas para registrar.");
+                return;
+            }
+
+            // Añadir coordenada a la tabla
+            let table = document.getElementById("tabla-coordenadas").getElementsByTagName('tbody')[0];
+            let newRow = table.insertRow();
+            newRow.insertCell(0).textContent = este;
+            newRow.insertCell(1).textContent = norte;
+            newRow.insertCell(2).textContent = cota;
+            newRow.insertCell(3).textContent = zona;
+
+            // Guardar coordenada en IndexedDB
+            let transaction = db.transaction(["coordenadas"], "readwrite");
+            let store = transaction.objectStore("coordenadas");
+            store.add({ este, norte, cota, zona });
+        }
+
+        // Función para obtener coordenadas del GPS en tiempo real
+        if (navigator.geolocation) {
+            navigator.geolocation.watchPosition(function(position) {
+                let lat = position.coords.latitude;
+                let lon = position.coords.longitude;
+
+                // Mostrar en el mapa y agregar marcador
+                if (marker) {
+                    marker.setLatLng([lat, lon]);
+                } else {
+                    marker = L.marker([lat, lon]).addTo(map);
+                }
+                map.setView([lat, lon], 13);
+
+                // Convertir a UTM (proyección de ejemplo, ajustar según zona)
+                let utm = convertirLatLonAUTM(lat, lon);
+                document.getElementById('este').value = utm.x;
+                document.getElementById('norte').value = utm.y;
+                document.getElementById('zona').value = utm.zona;
+            }, function(error) {
+                console.error("Error al obtener ubicación: " + error.message);
+            }, {
+                enableHighAccuracy: true
+            });
+        }
+
+        // Convertir lat/lon a UTM (ajustar proyección según zona)
+        function convertirLatLonAUTM(lat, lon) {
+            let zona = Math.floor((lon + 180) / 6) + 1;
+            let projZona = `+proj=utm +zone=${zona} +south +datum=WGS84 +units=m +no_defs`;
+            let [x, y] = proj4(projZona, [lon, lat]);
+            return { x, y, zona: zona + 'S' };
+        }
+
+        // Exportar tabla a XLSX
+        function exportarXLSX() {
+            let tabla = document.getElementById('tabla-coordenadas');
+            let wb = XLSX.utils.table_to_book(tabla, {sheet: "Coordenadas"});
+            XLSX.writeFile(wb, 'coordenadas.xlsx');
+        }
+
+        // Exportar coordenadas a KML
+        function exportarKML() {
+            let kmlContent = `<?xml version="1.0" encoding="UTF-8"?>\n<kml xmlns="http://www.opengis.net/kml/2.2">\n<Document>\n`;
+            let table = document.getElementById("tabla-coordenadas").getElementsByTagName('tbody')[0];
+            for (let i = 0; i < table.rows.length; i++) {
+                let este = table.rows[i].cells[0].textContent;
+                let norte = table.rows[i].cells[1].textContent;
+                kmlContent += `<Placemark>\n<Point><coordinates>${este},${norte}</coordinates></Point>\n</Placemark>\n`;
+            }
+            kmlContent += `</Document>\n</kml>`;
+            let blob = new Blob([kmlContent], {type: 'application/vnd.google-earth.kml+xml'});
+            let link = document.createElement('a');
+            link.href = URL.createObjectURL(blob);
+            link.download = 'coordenadas.kml';
+            link.click();
+        }
+    </script>
+    <!-- Librería Proj4 para conversión UTM -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/proj4js/2.7.5/proj4.js"></script>
+</body>
+</html>
