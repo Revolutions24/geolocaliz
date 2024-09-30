@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Super App de Geolocalización</title>
+    <title>Super App de Geolocalización Móvil</title>
 
     <!-- Leaflet CSS -->
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
@@ -23,18 +23,20 @@
             text-align: center;
         }
         #map {
-            height: 300px;
+            height: 50vh; /* Tamaño del mapa ajustado para móviles */
             margin: 10px;
         }
         .container {
-            padding: 20px;
+            padding: 10px;
         }
         input, button {
-            padding: 10px;
-            margin: 5px;
+            width: 100%;
+            padding: 12px;
+            margin: 10px 0;
             border: 1px solid #0077b6;
             border-radius: 5px;
             font-size: 16px;
+            box-sizing: border-box;
         }
         button {
             background-color: #0077b6;
@@ -66,11 +68,10 @@
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.6.0/jszip.min.js"></script>
-
 </head>
 <body>
     <header>
-        <h1>Super App de Geolocalización</h1>
+        <h1>Geolocalización Móvil</h1>
     </header>
 
     <div class="container">
@@ -84,8 +85,8 @@
         <label for="norte">Norte (Y): </label>
         <input type="number" id="norte" placeholder="Norte (Y)" readonly><br>
 
-        <label for="cota">Cota (Z): </label>
-        <input type="number" id="cota" placeholder="Ingrese Cota (Z)"><br>
+        <label for="cota">Altitud (Z): </label>
+        <input type="number" id="cota" placeholder="Altitud (Z)" readonly><br>
 
         <label for="zona">Zona UTM: </label>
         <input type="text" id="zona" readonly><br>
@@ -100,7 +101,7 @@
                 <tr>
                     <th>Este (X)</th>
                     <th>Norte (Y)</th>
-                    <th>Cota (Z)</th>
+                    <th>Altitud (Z)</th>
                     <th>Zona</th>
                 </tr>
             </thead>
@@ -119,7 +120,7 @@
 
         let marker;
 
-        // Configuración de IndexedDB para almacenamiento offline
+        // IndexedDB para almacenamiento offline
         let db;
         let request = indexedDB.open("CoordenadasDB", 1);
 
@@ -167,6 +168,7 @@
             navigator.geolocation.watchPosition(function(position) {
                 let lat = position.coords.latitude;
                 let lon = position.coords.longitude;
+                let alt = position.coords.altitude || 0;  // Si el GPS no proporciona altitud, se pone 0.
 
                 // Mostrar en el mapa y agregar marcador
                 if (marker) {
@@ -181,14 +183,17 @@
                 document.getElementById('este').value = utm.x;
                 document.getElementById('norte').value = utm.y;
                 document.getElementById('zona').value = utm.zona;
+                document.getElementById('cota').value = alt;  // Actualiza el input de altitud
             }, function(error) {
                 console.error("Error al obtener ubicación: " + error.message);
             }, {
-                enableHighAccuracy: true
+                enableHighAccuracy: true,
+                maximumAge: 10000, // Permite mantener la ubicación por 10 segundos
+                timeout: 5000 // Tiempo máximo de espera
             });
         }
 
-        // Convertir lat/lon a UTM (ajustar proyección según zona)
+        // Convertir lat/lon a UTM
         function convertirLatLonAUTM(lat, lon) {
             let zona = Math.floor((lon + 180) / 6) + 1;
             let projZona = `+proj=utm +zone=${zona} +south +datum=WGS84 +units=m +no_defs`;
@@ -210,7 +215,8 @@
             for (let i = 0; i < table.rows.length; i++) {
                 let este = table.rows[i].cells[0].textContent;
                 let norte = table.rows[i].cells[1].textContent;
-                kmlContent += `<Placemark>\n<Point><coordinates>${este},${norte}</coordinates></Point>\n</Placemark>\n`;
+                let cota = table.rows[i].cells[2].textContent;
+                kmlContent += `<Placemark>\n<Point><coordinates>${este},${norte},${cota}</coordinates></Point>\n</Placemark>\n`;
             }
             kmlContent += `</Document>\n</kml>`;
             let blob = new Blob([kmlContent], {type: 'application/vnd.google-earth.kml+xml'});
@@ -220,6 +226,7 @@
             link.click();
         }
     </script>
+
     <!-- Librería Proj4 para conversión UTM -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/proj4js/2.7.5/proj4.js"></script>
 </body>
